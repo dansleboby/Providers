@@ -35,17 +35,19 @@ class Provider extends AbstractProvider implements ProviderInterface
     protected function getTokenUrl()
     {
         // Prefer trusted values first, then callback input for the initial token request.
-        $domainPrefix = $this->sanitizeDomainPrefix($this->domainPrefix)
-            ?? $this->sanitizeDomainPrefix($this->getConfig('domain_prefix'))
-            ?? $this->sanitizeDomainPrefix(request()->input('domain_prefix'));
+        $domainPrefix = $this->sanitizeDomainPrefix($this->domainPrefix);
+        if (!$domainPrefix) {
+            $domainPrefix = $this->sanitizeDomainPrefix($this->getConfig('domain_prefix'));
+        }
+        if (!$domainPrefix) {
+            $domainPrefix = $this->sanitizeDomainPrefix(request()->input('domain_prefix'));
+        }
 
         if (empty($domainPrefix)) {
             throw new \InvalidArgumentException(
                 'Domain prefix is required to get the token URL. Set it using setDomainPrefix(), config, or callback.'
             );
         }
-
-        $this->domainPrefix = $domainPrefix;
 
         return "https://{$domainPrefix}.retail.lightspeed.app/api/1.0/token";
     }
@@ -75,8 +77,6 @@ class Provider extends AbstractProvider implements ProviderInterface
         // For subsequent calls after token retrieval
         $domainPrefix = $this->sanitizeDomainPrefix($this->getConfig('domain_prefix'));
         if ($domainPrefix) {
-            $this->domainPrefix = $domainPrefix;
-
             return $domainPrefix;
         }
 
@@ -153,7 +153,9 @@ class Provider extends AbstractProvider implements ProviderInterface
     {
         $domainPrefix = $this->sanitizeDomainPrefix($domainPrefix);
         if (!$domainPrefix) {
-            throw new \InvalidArgumentException('Invalid domain_prefix provided.');
+            throw new \InvalidArgumentException(
+                'Invalid domain_prefix provided. Use lowercase letters, numbers, and internal hyphens only; it must start and end with a letter or number.'
+            );
         }
 
         $this->domainPrefix = $domainPrefix;
@@ -230,6 +232,8 @@ class Provider extends AbstractProvider implements ProviderInterface
             return null;
         }
 
+        // Allows one or more lowercase alphanumeric characters with optional internal hyphens.
+        // Prefix must start and end with an alphanumeric character.
         if (!preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $domainPrefix)) {
             return null;
         }
