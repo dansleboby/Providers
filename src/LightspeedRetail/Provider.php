@@ -34,14 +34,18 @@ class Provider extends AbstractProvider implements ProviderInterface
      */
     protected function getTokenUrl()
     {
-        // We must get the domain_prefix from the callback for the initial token request
-        $domainPrefix = request()->input('domain_prefix', $this->domainPrefix);
+        // Prefer trusted values first, then callback input for the initial token request.
+        $domainPrefix = $this->sanitizeDomainPrefix($this->domainPrefix)
+            ?? $this->sanitizeDomainPrefix($this->getConfig('domain_prefix'))
+            ?? $this->sanitizeDomainPrefix(request()->input('domain_prefix'));
 
         if (empty($domainPrefix)) {
             throw new \InvalidArgumentException(
-                'Domain prefix is required to get the token URL. Make sure it is passed in the callback.'
+                'Domain prefix is required to get the token URL. Set it using setDomainPrefix(), config, or callback.'
             );
         }
+
+        $this->domainPrefix = $domainPrefix;
 
         return "https://{$domainPrefix}.retail.lightspeed.app/api/1.0/token";
     }
@@ -63,14 +67,17 @@ class Provider extends AbstractProvider implements ProviderInterface
      */
     protected function getDomainPrefix()
     {
-        if ($this->domainPrefix) {
-            return $this->domainPrefix;
+        $domainPrefix = $this->sanitizeDomainPrefix($this->domainPrefix);
+        if ($domainPrefix) {
+            return $domainPrefix;
         }
 
         // For subsequent calls after token retrieval
-        $configPrefix = $this->getConfig('domain_prefix');
-        if (!empty($configPrefix)) {
-            return $configPrefix;
+        $domainPrefix = $this->sanitizeDomainPrefix($this->getConfig('domain_prefix'));
+        if ($domainPrefix) {
+            $this->domainPrefix = $domainPrefix;
+
+            return $domainPrefix;
         }
 
         throw new \InvalidArgumentException(
@@ -92,7 +99,7 @@ class Provider extends AbstractProvider implements ProviderInterface
 
         // Store the domain_prefix from the token response
         if (isset($response['domain_prefix'])) {
-            $this->domainPrefix = $response['domain_prefix'];
+            $this->domainPrefix = $this->sanitizeDomainPrefix($response['domain_prefix']);
         }
 
         $userData = $this->getUserByToken(
@@ -100,7 +107,7 @@ class Provider extends AbstractProvider implements ProviderInterface
         );
 
         // Add domain prefix to the raw user data
-        $userData['domain_prefix'] = $this->domainPrefix;
+        $userData['domain_prefix'] = $this->getDomainPrefix();
 
         $user = $this->mapUserToObject($userData);
 
@@ -144,6 +151,11 @@ class Provider extends AbstractProvider implements ProviderInterface
      */
     public function setDomainPrefix($domainPrefix)
     {
+        $domainPrefix = $this->sanitizeDomainPrefix($domainPrefix);
+        if (!$domainPrefix) {
+            throw new \InvalidArgumentException('Invalid domain_prefix provided.');
+        }
+
         $this->domainPrefix = $domainPrefix;
 
         return $this;
@@ -161,7 +173,7 @@ class Provider extends AbstractProvider implements ProviderInterface
 
         // Store the domain_prefix from the token response
         if (isset($response['domain_prefix'])) {
-            $this->domainPrefix = $response['domain_prefix'];
+            $this->domainPrefix = $this->sanitizeDomainPrefix($response['domain_prefix']);
         }
 
         return $response;
@@ -197,9 +209,31 @@ class Provider extends AbstractProvider implements ProviderInterface
 
         // Update domain prefix in case it changed
         if (isset($refreshedToken['domain_prefix'])) {
-            $this->domainPrefix = $refreshedToken['domain_prefix'];
+            $this->domainPrefix = $this->sanitizeDomainPrefix($refreshedToken['domain_prefix']);
         }
 
         return $refreshedToken;
+    }
+
+    /**
+     * @param mixed $domainPrefix
+     * @return string|null
+     */
+    protected function sanitizeDomainPrefix($domainPrefix)
+    {
+        if (!is_string($domainPrefix)) {
+            return null;
+        }
+
+        $domainPrefix = strtolower(trim($domainPrefix));
+        if ($domainPrefix === '') {
+            return null;
+        }
+
+        if (!preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $domainPrefix)) {
+            return null;
+        }
+
+        return $domainPrefix;
     }
 }
